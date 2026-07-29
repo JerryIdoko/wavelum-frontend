@@ -244,6 +244,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
 
       - name: Run Lighthouse CI
+        id: lighthouse
         run: npx lhci autorun
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
@@ -267,6 +268,7 @@ jobs:
 
       - name: Comment Lighthouse scores on PR
         if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
         uses: thollander/actions-comment-pull-request@v3
         with:
           file-path: lighthouse-summary.md
@@ -277,8 +279,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lighthouse-report
-          path: .lighthouseci/
+          path: |
+            .lighthouseci/
+            lighthouse-summary.md
           retention-days: 30
+          if-no-files-found: warn
 
   # ───────────────────────────────────────────────────────────────────────────
   # Visual review of the component library via Chromatic (Storybook).
