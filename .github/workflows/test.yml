@@ -218,6 +218,69 @@ jobs:
           }' || echo "Color contrast check skipped (tool may not be available)"
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Lighthouse CI: performance, accessibility, best-practices, and SEO audits
+  # with score budgets. Runs on all key locale routes. Fails if any category
+  # score drops below the defined threshold. Uploads the HTML report as an
+  # artifact and posts a summary comment on PRs.
+  # ───────────────────────────────────────────────────────────────────────────
+  lighthouse-audit:
+    name: Lighthouse CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci || { echo "npm ci failed, retrying in 5s..."; sleep 5; npm ci; } || { echo "npm ci failed, retrying in 10s..."; sleep 10; npm ci; }
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Extract Lighthouse scores
+        if: always()
+        id: lighthouse-scores
+        run: |
+          echo '## Lighthouse Audit Results' > lighthouse-summary.md
+          echo '' >> lighthouse-summary.md
+          if [ -f .lighthouseci/manifest.json ]; then
+            for url in $(jq -r '.[].url' .lighthouseci/manifest.json 2>/dev/null); do
+              echo "### ${url}" >> lighthouse-summary.md
+              jq -r --arg u "$url" '.[] | select(.url==$u) | "| Metric | Score |\n| --- | --- |\n| Performance | \(.summary.performance*100 | floor)% |\n| Accessibility | \(.summary.accessibility*100 | floor)% |\n| Best Practices | \(.summary["best-practices"]*100 | floor)% |\n| SEO | \(.summary.seo*100 | floor)% |"' .lighthouseci/manifest.json >> lighthouse-summary.md 2>/dev/null || true
+              echo '' >> lighthouse-summary.md
+            done
+          else
+            echo 'No Lighthouse manifest found. The audit may have failed.' >> lighthouse-summary.md
+          fi
+          cat lighthouse-summary.md
+
+      - name: Comment Lighthouse scores on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          file-path: lighthouse-summary.md
+          comment-tag: lighthouse-scores
+
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Visual review of the component library via Chromatic (Storybook).
   # ───────────────────────────────────────────────────────────────────────────
   visual-review:
